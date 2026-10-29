@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>BuwuBot · 本机管理</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">跳到主要内容</a>
+  <aside class="sidebar">
+    <a class="brand" href="#overview">BuwuBot</a><p class="brand-note">本机管理</p>
+    <nav aria-label="管理导航">
+      <a href="#overview" data-page="overview"><span aria-hidden="true">⌂</span>运行概览</a>
+      <a href="#config" data-page="config"><span aria-hidden="true">▤</span>人格与设置</a>
+      <a href="#memories" data-page="memories"><span aria-hidden="true">▱</span>记忆</a>
+      <a href="#stickers" data-page="stickers"><span aria-hidden="true">☺</span>表情包</a>
+      <a href="#retrieval" data-page="retrieval"><span aria-hidden="true">⚒</span>记忆检索</a>
+      <a href="#records" data-page="records"><span aria-hidden="true">▧</span>运行记录</a>
+      <hr><a href="#plugins" data-page="plugins"><span aria-hidden="true"></span>技能插件</a>
+      <div id="activity-nav"><p class="nav-heading">活动范围</p><a href="#activity-qq" data-page="activity-qq"><span aria-hidden="true"></span>QQ 聊天</a></div>
+    </nav>
+    <p class="local-note">本机管理 · 127.0.0.1</p>
+  </aside>
+  <main id="main" tabindex="-1">
+    <header class="page-header">
+      <div><h1 id="page-title">运行概览</h1><p id="page-subtitle">查看本体状态、心跳与待处理任务。</p></div>
+      <button id="refresh" class="primary" type="button"><span aria-hidden="true">↻</span>刷新</button>
+    </header>
+    <div id="environment" class="connection-notice preview-note" hidden></div>
+    <div id="scope-controls" class="filter-bar" hidden></div>
+    <div id="notice" class="notice" role="alert" hidden></div>
+    <div id="content" aria-busy="true"><p class="loading">正在读取本机服务…</p></div>
+    <p id="updated" class="updated"></p>
+    <footer class="updated">© 2026 BuwuBot contributors · <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noreferrer">AGPL-3.0-or-later</a> · 可依许可使用与分发，不提供担保</footer>
+  </main>
+  <dialog id="editor"><form id="edit-form"><div class="dialog-heading"><h2 id="edit-title"></h2><button type="button" id="close-editor" class="text-button" aria-label="关闭编辑窗口">×</button></div><div id="edit-fields"></div><div class="form-actions"><button type="button" id="cancel-editor">取消</button><button class="primary" type="submit">保存修改</button></div><p id="edit-error" role="alert"></p></form></dialog>
+</body>
+</html>

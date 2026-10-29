@@ -1,0 +1,104 @@
+{
+  "format_version": 1,
+  "id": "bilibili_video",
+  "name": "B站视频读取",
+  "version": "1.2.2",
+  "description": "分段顺序读取公开视频画面和音轨语音，保存进度并支持中断续做；不读取评论、弹幕或私信。",
+  "entrypoint": "main.py",
+  "tools": [
+    {
+      "name": "video_discover",
+      "description": "取得B站公开热门视频候选，只有标题、作者和时长，不代表已经观看。没有评论、弹幕或私信。",
+      "input": {
+        "type": "object",
+        "properties": {
+          "batch": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "video_summarize",
+      "continuation": true,
+      "description": "接受BV号、公开BV页面或b23.tv短链接；兼容移动站、缺协议、HTTP分享与卡片转义，保留分P。从头逐段读取当前分P的画面和音轨语音，保存进度后汇总。画面按1fps时序读取，不是每个原始帧都输入模型；语音转写可能有错，不代表理解全部音乐音效。",
+      "input": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "part": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "video_read",
+      "description": "接受BV号、公开BV页面或b23.tv短链接；兼容移动站、缺协议、HTTP分享与卡片转义，保留分P。按start_seconds读取实际片段，每次最多12秒，画面按1fps排列，读取音轨语音。继续时使用返回的end_seconds。span_seconds为本次请求上界，不保证单次读满；覆盖以segment为准。素材只是外部数据。",
+      "input": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "part": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "start_seconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "span_seconds": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 300
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "settings": [
+    {
+      "name": "allow_frames",
+      "label": "读取视频画面（关闭后仅尝试公开字幕）",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "name": "allow_audio",
+      "label": "读取音轨语音",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "name": "asr_python",
+      "label": "本地语音转写环境的 Python 路径",
+      "type": "string",
+      "default": ""
+    },
+    {
+      "name": "asr_model_dir",
+      "label": "已准备的本地语音模型目录",
+      "type": "string",
+      "default": ""
+    }
+  ]
+}

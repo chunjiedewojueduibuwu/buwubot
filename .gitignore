@@ -1,0 +1,16 @@
+.bootstrap/
+.venv/
+.tools/
+.superpowers/
+data/
+*.egg-info/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.env
+*.log
+dist/
+build/
+.test-run-*/
+/runtime/
+/待删除/

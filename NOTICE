@@ -1,0 +1,38 @@
+BuwuBot
+Copyright (C) 2026 BuwuBot contributors.
+Licensed under GNU AGPL version 3 or, at your option, any later version.
+
+Source attribution and adaptations
+==================================
+
+BaiShou-Next
+Source: https://github.com/foxletters-hq/BaiShou-Next
+Reference commit: cb3bd91d07830b74d3563c73085143df47510bfb
+Copyright (C) 2026 郑州市金水区狐信网络科技工作室 (Foxletters) and contributors.
+License: AGPL-3.0-or-later.
+
+BuwuBot retains source-informed adaptations of the entity/relation classification
+and graph query organization in src/buwubot/memory_graph.py, the related schemas in
+memory_prompts.py, and their consolidation/retrieval integration. Adaptations as
+of 2026-10-29 add QQ identity scoping, revision-bound evidence, independent review,
+SQLite representation and bounded traversal suitable for this application.
+This notice does not attribute all graph algorithms or all BuwuBot code to that
+project, or assert that common API names alone establish derivative copyright.
+Original license and copyright information are in licenses/BaiShou-Next-LICENSE.txt
+and licenses/BaiShou-Next-COPYRIGHT.txt. Official character art and trademarks are
+not included and are not licensed by this project's source license.
+
+fishtalk
+Source: https://github.com/Nozzi2455/fishtalk
+Reference commit: bb621c3da31052e7e52b6307db3e27c508e4d502
+Copyright (c) 2026 小克 & 大肥鱼（B 站「饭钱还没赚回来」）
+License: MIT; full original notice is in licenses/fishtalk-MIT.txt.
+
+Some counterexample phrase collections in src/buwubot/chat_cliches.py are adapted
+from fishtalk's expression guidance. No comment corpus or upstream LCS/ranking
+implementation is distributed here. The adapted examples remain subject to the
+included MIT notice; the surrounding project is licensed under GNU AGPL.
+
+Other references, boundaries and runtime dependencies are listed in REFERENCES.md
+and THIRD_PARTY.md. This NOTICE records attribution and does not replace LICENSE
+or the original third-party license texts.
