@@ -336,7 +336,7 @@ def register_admin(app: FastAPI):
         def save():
             selected = copy(state.stickers)
             selected.settings = updated
-            with state.store.transaction():
+            with state.store.transaction() as db:
                 evictions = selected.eviction_ids()
                 preview = hashlib.sha256(json.dumps(sorted(evictions)).encode()).hexdigest()
                 if evictions and (not body.confirm_evictions or body.eviction_preview != preview):
@@ -352,7 +352,13 @@ def register_admin(app: FastAPI):
                 memory_fields={'memory_policies','memory_deleted_retention_days',
                     'memory_relation_expansion','memory_relation_depth','mood_half_life_minutes'}
                 if any(getattr(current,key)!=getattr(updated,key) for key in set(body.changes)-memory_fields):
-                    state.coordinator.queue.retry_attention()
+                    model_fields={'workbuddy_url','workbuddy_key','primary_model','auxiliary_model','reviewer_model'}
+                    if set(body.changes) <= model_fields:
+                        db.execute("UPDATE jobs SET state='pending',next_attempt=0 WHERE state='needs_attention' "
+                                   "AND (last_error LIKE 'gateway HTTP %' OR last_error=?)",
+                                   ('模型认证或配置需要修复',))
+                    else:
+                        state.coordinator.queue.retry_attention()
                 state.store.event("config", "管理页面更新配置", {"fields": list(body.changes)})
             state.memory.settings = updated
             state.stickers.settings = updated
