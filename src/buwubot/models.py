@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -12,6 +13,8 @@ import httpx
 from .config import Settings
 from .coordinator import WorkPaused
 from .schedule import SHANGHAI
+
+logger = logging.getLogger(__name__)
 
 
 class ModelUnavailable(RuntimeError):
@@ -231,6 +234,7 @@ class ModelClient:
             body = {"model": model, "messages": messages, "stream": streaming, "max_tokens": max_tokens}
             if json_mode:
                 body["response_format"] = {"type": "json_object"}
+            started = time.monotonic()
             try:
                 response = await self.http.post(
                     cfg.workbuddy_url.rstrip("/") + "/chat/completions", json=body,
@@ -238,6 +242,10 @@ class ModelClient:
                 )
                 if asyncio.current_task().cancelling():
                     raise asyncio.CancelledError
+            except asyncio.CancelledError:
+                logger.info("event=model_request_cancelled role=%s model=%s elapsed_ms=%.0f",
+                            role, model, (time.monotonic() - started) * 1000)
+                raise
             except httpx.HTTPError:
                 errors.append((False, "gateway transport unavailable"))
                 shared_errors.append(True)

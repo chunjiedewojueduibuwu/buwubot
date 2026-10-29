@@ -159,7 +159,7 @@ async def test_direct_call_preempts_idle_primary_and_preserves_job(tmp_path):
     await asyncio.wait_for(entered.wait(), 1)
     engine.ingest({'time': engine.clock().timestamp(), 'post_type': 'message', 'message_type': 'group',
         'group_id': 123, 'self_id': 11, 'user_id': 22, 'message_id': 2,
-        'sender': {'nickname': '甲'}, 'message': [{'type': 'text', 'data': {'text': '助手你好'}}]})
+        'sender': {'nickname': '甲'}, 'message': [{'type': 'text', 'data': {'text': engine.settings.aliases[0] + '你好'}}]})
     with pytest.raises(WorkPaused):
         await asyncio.wait_for(task, 1)
     assert engine.queue.get(jid)['state'] == 'pending'
@@ -287,6 +287,42 @@ async def test_schedule_pause_cancels_idle_model_without_completing_job(tmp_path
     finally:
         supervisor.cancel()
         await asyncio.gather(supervisor, return_exceptions=True)
+        store.close()
+
+
+async def test_background_backlog_defers_next_stage_without_discarding_inflight_result(tmp_path):
+    store, engine, _, models, _ = await engine_pair(tmp_path)
+    entered, release, supervised = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    async def call(*args, **kwargs):
+        entered.set()
+        await release.wait()
+        return Completion('', 'glm', {'relations': [], 'distillations': []})
+
+    async def plan_pending():
+        supervised.set()
+
+    models.call = call
+    engine.plan_pending = plan_pending
+    engine.enqueue_consolidations()
+    jid = store.rows("SELECT id FROM jobs WHERE kind='consolidate'")[0]['id']
+    task = asyncio.create_task(engine.process(engine.queue.get(jid)))
+    await asyncio.wait_for(entered.wait(), 1)
+    engine.queue.enqueue('context', {}, dedupe_key='new-background-material', priority=2,
+                         source_time=engine.clock().timestamp())
+    assert not engine.consolidation_allowed()
+    supervisor = asyncio.create_task(engine._supervise())
+    try:
+        await asyncio.wait_for(supervised.wait(), 1)
+        release.set()
+        with pytest.raises(WorkPaused):
+            await asyncio.wait_for(task, 1)
+        assert 'prepared_candidates' in engine.queue.get(jid)['payload']
+        assert engine.queue.get(jid)['state'] == 'pending'
+    finally:
+        supervisor.cancel()
+        task.cancel()
+        await asyncio.gather(supervisor, task, return_exceptions=True)
         store.close()
 
 

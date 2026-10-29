@@ -1897,7 +1897,9 @@ class BotEngine:
                         phase.cancel()
                 if self.learning and (self.learning.active_item or self.learning.selecting) and not self.learning_allowed():
                     self.learning.pause("运行暂停或更高优先级任务")
-                if self._consolidation_phase and not self.consolidation_allowed():
+                # New background work waits at the next checkpoint instead of
+                # discarding an in-flight model result. Direct calls cancel in ingest().
+                if self._consolidation_phase and not self.allowed():
                     self.pause_consolidation()
                 if self.allowed():
                     self._last_heartbeat = self.clock().timestamp()
