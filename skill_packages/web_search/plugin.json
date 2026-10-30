@@ -2,7 +2,7 @@
   "format_version": 1,
   "id": "web_search",
   "name": "搜索与网页读取",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "无需密钥搜索公开网页并读取静态正文，结果交给助手理解与表达。",
   "entrypoint": "main.py",
   "tools": [

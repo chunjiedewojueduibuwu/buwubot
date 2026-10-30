@@ -30,6 +30,22 @@ def test_search_and_read_return_sources_and_explicit_coverage(monkeypatch):
     assert "secret" not in r["data"]["text"]
 
 
+@pytest.mark.parametrize('error', [ValueError('no static text'), TimeoutError(), web.TemporaryUnavailable()])
+def test_search_preserves_results_when_optional_page_read_fails(monkeypatch, error):
+    xml = b'<rss><channel><item><title>Example</title><link>https://example.com/</link><description>Public result</description></item></channel></rss>'
+    monkeypatch.setattr(web, 'fetch', lambda url: (url, 'application/rss+xml', xml))
+    def failed_read(*args):
+        raise error
+    monkeypatch.setattr(web, 'read_page', failed_read)
+    result = web.execute({'tool': 'web_search', 'arguments': {'query': 'example'}})
+    assert result['state'] == 'succeeded'
+    assert result['data']['results'][0]['snippet'] == 'Public result'
+    assert result['data']['coverage'] == 'search_snippets'
+    assert result['data']['page_read_error']['url'] == 'https://example.com/'
+    assert result['data']['page_read_error']['failure_kind'] == type(error).__name__
+    assert not result['data'].get('pages')
+
+
 def test_transient_failure_stays_pending_and_invalid_request_fails(monkeypatch):
     def fail(url):
         raise TimeoutError()
@@ -264,7 +280,7 @@ def test_read_coverage_keeps_injection_as_data_but_never_executes_it(monkeypatch
     assert len(json.dumps(result['data'], ensure_ascii=False).encode()) < 64 * 1024
 
 
-def test_compound_search_reads_actual_source_and_keeps_read_failure_pending(monkeypatch):
+def test_compound_search_reads_actual_source_and_preserves_snippets_on_read_failure(monkeypatch):
     calls = []
     def fetch(url):
         calls.append(url)
@@ -282,7 +298,11 @@ def test_compound_search_reads_actual_source_and_keeps_read_failure_pending(monk
             return fetch(url)
         raise TimeoutError()
     monkeypatch.setattr(web, 'fetch', fail_read)
-    assert web.execute({'tool':'web_search', 'arguments':{'query':'example', 'request_id':'stable'}})['state'] == 'pending'
+    result = web.execute({'tool':'web_search', 'arguments':{'query':'example', 'request_id':'stable'}})
+    assert result['state'] == 'succeeded'
+    assert result['data']['coverage'] == 'search_snippets'
+    assert result['data']['results'][0]['url'] == 'https://example.com/'
+    assert result['data']['page_read_error']['failure_kind'] == 'TimeoutError'
 
 
 async def test_real_package_lifecycle_and_isolated_process_protocol(tmp_path):
@@ -298,7 +318,7 @@ async def test_real_package_lifecycle_and_isolated_process_protocol(tmp_path):
     store = Store(tmp_path / 'plugin.db')
     tools = ToolRegistry()
     manager = SkillPlugins(store, tools, tmp_path / 'skills')
-    coordinator = Coordinator(store, None, Settings(runtime_enabled=True, qq_enabled=True, owner_private_enabled=True, owner_id='10001', persona_name='助手', aliases=['助手']))
+    coordinator = Coordinator(store, None, Settings())
     installed = await coordinator.commit(lambda: manager.install(archive.getvalue()))
     assert installed['id'] == 'web_search' and not installed['enabled']
     assert (await tools.invoke('web_read', {'url':'file:///secret'}))['state'] == 'unavailable'

@@ -236,16 +236,23 @@ class ModelClient:
                 body["response_format"] = {"type": "json_object"}
             started = time.monotonic()
             try:
-                response = await self.http.post(
-                    cfg.workbuddy_url.rstrip("/") + "/chat/completions", json=body,
-                    headers={"Authorization": "Bearer " + cfg.workbuddy_key.get_secret_value()},
-                )
+                async with asyncio.timeout(cfg.model_timeout_seconds):
+                    response = await self.http.post(
+                        cfg.workbuddy_url.rstrip("/") + "/chat/completions", json=body,
+                        headers={"Authorization": "Bearer " + cfg.workbuddy_key.get_secret_value()},
+                    )
                 if asyncio.current_task().cancelling():
                     raise asyncio.CancelledError
             except asyncio.CancelledError:
                 logger.info("event=model_request_cancelled role=%s model=%s elapsed_ms=%.0f",
                             role, model, (time.monotonic() - started) * 1000)
                 raise
+            except TimeoutError:
+                logger.info("event=model_request_deadline role=%s model=%s elapsed_ms=%.0f",
+                            role, model, (time.monotonic() - started) * 1000)
+                errors.append((False, "gateway response deadline exceeded"))
+                shared_errors.append(True)
+                continue
             except httpx.HTTPError:
                 errors.append((False, "gateway transport unavailable"))
                 shared_errors.append(True)

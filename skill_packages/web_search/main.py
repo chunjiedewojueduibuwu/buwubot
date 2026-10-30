@@ -270,9 +270,15 @@ def execute(request):
             data = {'results': results, 'query': query, 'provider': 'bing_public_rss',
                     'coverage': 'search_snippets', 'trust': 'external_data', 'fetched_at': time.time()}
             if results and read:
-                page = read_page(results[0]['url'], min(chars, 4000))
-                data['pages'] = [page]
-                data['coverage'] = 'search_snippets_and_static_text'
+                try:
+                    page = read_page(results[0]['url'], min(chars, 4000))
+                except (ValueError, OSError, http.client.HTTPException) as error:
+                    data['page_read_error'] = {'url': results[0]['url'],
+                                               'failure_kind': type(error).__name__,
+                                               'message': '首条网页正文未取得，仅有搜索摘要，可尝试其他来源'}
+                else:
+                    data['pages'] = [page]
+                    data['coverage'] = 'search_snippets_and_static_text'
         elif tool == 'web_read':
             requested = public_target(arguments.get('url'))
             data = read_page(requested, chars)
