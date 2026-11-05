@@ -53,7 +53,6 @@ class Mood:
         if not row['memory_id']:return True
         item=self.memory.get(row['memory_id'])
         return bool(item and item['tier']=='feeling' and item['persona_id']==cfg.persona_id
-            and cfg.allows_conversation(item['group_id'])
             and not self.memory.has_recalled_source(item['source_message_ids'])
             and self.memory.with_reading_policy(item,now=now).get('memory_remaining',1)>0)
 

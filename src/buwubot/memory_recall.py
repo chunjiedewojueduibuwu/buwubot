@@ -81,7 +81,8 @@ class MemoryRecall:
             score=recall_score(**inputs,policy=policy)
             result.append(item|{'recall_signals':inputs|{'accessibility':score,
                 'triggered':score>=policy.recall_threshold,'threshold':policy.recall_threshold}})
-        return sorted(result,key=lambda item:-item['recall_signals']['accessibility'])
+        return sorted(result, key=lambda item:
+                      -item['recall_signals']['accessibility'] * item.get('source_weight', 1.))
 
     def _linked(self,item,kind):
         linked=[]

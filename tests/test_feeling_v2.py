@@ -9,6 +9,40 @@ from buwubot.memory_dynamics import DAY, MemoryAnchor
 from buwubot.mood import Mood
 
 
+async def test_feeling_can_be_recalled_from_another_chat_after_source_is_disabled(tmp_path, monkeypatch):
+    from buwubot.memory import MemoryService
+
+    store, memory, coordinator = setup_memory(tmp_path)
+    store.set_state('memory_schema_version', 2)
+    monkeypatch.setattr('buwubot.memory.time.time', lambda: 100)
+    p = proposal().model_copy(update={
+        'tier': 'feeling', 'subject_id': '', 'persona_id': memory.settings.persona_id,
+        'memory_schema_version': 2, 'significance': .6, 'feeling_strength': .8,
+        'feeling_valence': .7, 'content': '那次聊天很开心。',
+    })
+    try:
+        mid = await coordinator.commit(lambda: memory.commit(p, reviewed=True))
+        cfg, revision = store.settings()
+        cfg = cfg.model_copy(update={'group_id': '456', 'group_ids': []})
+        store.save_settings(cfg, revision)
+        reader = MemoryService(store, cfg)
+        found = await reader.retrieve('开心')
+        assert [item['id'] for item in found] == [mid]
+        assert found[0]['source_conversation'] == 'group:123'
+        assert reader.mood.view(now=100)['intensity'] > 0
+        await coordinator.commit(lambda: reader.recall_feeling(
+            mid, operation_id='cross-chat-recall', expected_revision=1, now=200))
+        current = reader.get(mid)
+        assert current['group_id'] == '123'
+        assert current['revision'] == 2
+        assert reader.with_reading_policy(current, now=200)['initial_feeling'] > .8
+        await coordinator.commit(lambda: reader.recall_feeling(
+            mid, operation_id='cross-chat-recall', expected_revision=1, now=200))
+        assert reader.get(mid)['revision'] == 2
+    finally:
+        store.close()
+
+
 def test_v2_feeling_has_one_residue_and_forgetting_starts_after_it_calms():
     policy=FeelingPolicy(half_life_minutes=30)
     anchor=MemoryAnchor(significance=.5,emotion=.8,valence=0,since=100)

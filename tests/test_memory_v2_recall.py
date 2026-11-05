@@ -10,7 +10,7 @@ from buwubot.models import Completion
 DAY=86400
 
 
-@pytest.mark.parametrize('kind', ['empty', 'deleted', 'other_group', 'other_persona', 'core'])
+@pytest.mark.parametrize('kind', ['empty', 'deleted', 'other_persona', 'core'])
 async def test_empty_retrievable_scope_avoids_model_roundtrips(tmp_path, kind):
     from buwubot.memory import core_scope
 
@@ -18,7 +18,7 @@ async def test_empty_retrievable_scope_avoids_model_roundtrips(tmp_path, kind):
     if kind != 'empty':
         mid = await coordinator.commit(lambda:memory.commit(proposal()))
         changes = {
-            'deleted':('deleted', 1), 'other_group':('group_id', '999'),
+            'deleted':('deleted', 1),
             'other_persona':('persona_id', 'another'),
             'core':('group_id', core_scope(memory.settings.persona_id)),
         }
@@ -310,7 +310,8 @@ async def test_v2_vector_fallback_rejects_stale_foreign_and_other_persona_hits(t
     assert original in {item['id'] for item in await memory.retrieve('服务',subjects=['22'])}
     memory.index.fail=False
     async def search(query,scope):
-        return [{'app_id':original,'revision':1,'similarity_score':.99}]
+        # A stale vector is still stored in its original namespace.
+        return [{'app_id':original,'revision':1,'similarity_score':.99}] if scope == '123' else []
     memory.index.search=search
     for column,value in [('group_id','999'),('persona_id','another')]:
         store.connection.execute(f'UPDATE memories SET {column}=? WHERE id=?',(value,original))

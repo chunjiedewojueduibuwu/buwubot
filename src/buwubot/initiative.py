@@ -1,5 +1,9 @@
 """Shared authorization and freshness checks for optional owner-only private contact."""
 
+from datetime import datetime
+
+from .schedule import SHANGHAI
+
 
 def owner_target(cfg):
     if (not cfg.owner_initiative_enabled or not cfg.runtime_enabled or not cfg.qq_enabled
@@ -14,6 +18,24 @@ def owner_input(store, cfg):
         "COALESCE(json_extract(payload,'$.source_order'),received_order) DESC,received_order DESC LIMIT 1",
         ('private:' + cfg.owner_id,cfg.owner_id))
     return dict(rows[0]) if rows else None
+
+
+def owner_group_activity(store, cfg, now):
+    groups = cfg.enabled_groups
+    if not groups:
+        return None
+    placeholders = ','.join('?' for _ in groups)
+    rows = store.rows(
+        f"SELECT group_id,time FROM messages WHERE group_id IN ({placeholders}) "
+        "AND user_id=? AND recalled=0 AND time BETWEEN ? AND ? "
+        "AND id NOT IN (SELECT alias_id FROM message_aliases) ORDER BY time DESC LIMIT 1",
+        (*groups, cfg.owner_id, now - cfg.retention_days * 86400, now),
+    )
+    if rows:
+        row = rows[0]
+        return {'source_conversation': 'group:' + row['group_id'],
+                'local_time': datetime.fromtimestamp(row['time'], SHANGHAI).isoformat()}
+    return None
 
 
 def initiative_valid(store, cfg, payload, now, job_id=''):

@@ -119,7 +119,7 @@ async def test_private_transport_uses_private_actions_and_uncertainty():
     assert calls[1][1]["user_id"]==target.target_id
 
 
-async def test_multi_conversation_runtime_does_not_mix_context_or_memory(tmp_path):
+async def test_multi_conversation_runtime_shares_memory_with_source_but_keeps_chat_local(tmp_path):
     cfg=Settings(runtime_enabled=True, qq_enabled=True, owner_private_enabled=True, owner_id='10001', persona_name='助手', aliases=['助手'], group_id="123",group_ids=["456"],self_id="11",persona="助手",workbuddy_key="fixture")
     store=Store(tmp_path/"bot.db")
     store.save_settings(cfg,store.settings()[1])
@@ -165,8 +165,15 @@ async def test_multi_conversation_runtime_does_not_mix_context_or_memory(tmp_pat
         for body in captured:
             source=body["targets"][0]["group_id"]
             assert all(m["group_id"]==source for m in body["recent_chat"])
-            assert body["memory"]
-            assert all(m["group_id"]==source for m in body["memory"])
+            assert {m["group_id"] for m in body["memory"]} == set(cfg.conversation_keys)
+            assert all(m["source_conversation"] == ConversationRef.from_key(m["group_id"]).id
+                       for m in body["memory"])
+            assert all(m["source_weight"] == (1.05 if m["group_id"] == source else 1.)
+                       for m in body["memory"])
+        store.save_settings(cfg.model_copy(update={"group_ids": []}), store.settings()[1])
+        store.set_state("memory_schema_version", 2)
+        recalled = await memory.retrieve("hello")
+        assert {item["source_conversation"] for item in recalled} == {"group:123", "group:456", "private:10001"}
         # A disabled target cannot send a previously queued reply.
         cfg.group_ids=[]
         coordinator.settings=cfg
