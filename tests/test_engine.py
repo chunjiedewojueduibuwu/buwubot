@@ -1019,6 +1019,61 @@ async def test_reply_without_at_wakes_and_planner_sees_original_but_may_stay_sil
     store.close()
 
 
+@pytest.mark.parametrize('sent_image', [False, True])
+async def test_recall_uses_nested_quote_topic_and_reports_internal_memory(tmp_path, sent_image):
+    import json
+
+    now = datetime(2026, 11, 6, 20, tzinfo=ZoneInfo('Asia/Shanghai'))
+    store, engine, qq, _ = build(tmp_path, lambda: now)
+    archive = engine.memory.archive
+    def incoming(mid, text, reply=None):
+        parts = [{'type':'text','data':{'text':text}}]
+        if reply:
+            parts.insert(0, {'type':'reply','data':{'id':reply}})
+        return archive.accept({'post_type':'message','message_type':'group','group_id':123,
+            'self_id':11,'user_id':22,'message_id':mid,'time':now.timestamp(),
+            'message':parts}, engine.settings)
+    incoming(1, '打多少兆帕', '10')
+    outgoing = engine.queue.enqueue('reply', {'persona_id':engine.settings.persona_id},
+        dedupe_key='sent-encouragement', priority=0, source_time=now.timestamp()-10)
+    sent_parts = [{'type':'text','data':{'text':'给花妈打气'}}]
+    if sent_image:
+        sent_parts.append({'type':'image','data':{'file':'missing-fixture.png'}})
+    async def missing_image(*args):
+        raise FileNotFoundError('fixture image is no longer available')
+    engine.media.acquire = missing_image
+    with store.transaction() as db:
+        db.execute('INSERT INTO outgoing VALUES(?,?,?,?,?,?,?)', (outgoing, '123', None,
+            json.dumps(sent_parts), now.timestamp()-10, 'sent', '10'))
+    target = incoming(2, '查询看看还能不能记起来', '1')
+    queries = []
+    async def retrieve(query, **kwargs):
+        queries.append(query)
+        return [{'id':'evidence','content':'给花妈打气'}]
+    engine.memory.retrieve = retrieve
+    scenes = []
+    engine.scene_material = lambda job, packet, **kwargs: scenes.append(packet) or {}
+    class Models(ModelsFixture):
+        async def call(self, role, payload, **kwargs):
+            if role == 'chat':
+                data = json.loads(payload[1]['content'][0]['text'])
+                assert data['memory'][0]['id'] == 'evidence'
+                assert [m['text'] for m in data['quoted_messages']] == ['打多少兆帕', '给花妈打气']
+                return Completion('', engine.settings.primary_model, {'text':'接的是刚才给花妈打气'})
+            return await super().call(role, payload, **kwargs)
+    engine.models = Models()
+    jid = engine.queue.enqueue('reply', {'group_id':'123','messages':[vars(target)],
+        'reply_id':target.message_id,'reply_source_id':target.id,'source_message_ids':[target.id]},
+        dedupe_key='recall-quote-topic',priority=0,source_time=target.time)
+    try:
+        await engine.process(engine.queue.get(jid))
+        assert queries and '打多少兆帕' in queries[0] and '给花妈打气' in queries[0]
+        assert scenes[0]['internal_memory_retrieval'] == 'automatic_before_reply'
+        assert len(qq.sent) == 1
+    finally:
+        store.close()
+
+
 async def test_name_substring_wakes_scan_but_ds_may_choose_silence(tmp_path):
     now = datetime(2026,10,22,13,tzinfo=ZoneInfo("Asia/Shanghai"))
     store, engine, qq, _ = build(tmp_path,lambda:now)

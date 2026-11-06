@@ -296,7 +296,8 @@ class MessageArchive:
                                             (self.canonical_id(message_key),)).fetchone()
         return self._decode(row) if row else None
 
-    def quoted(self, messages: list[Message], *, limit: int = 12) -> list[Message]:
+    def quoted(self, messages: list[Message], *, limit: int = 12,
+               settings: Settings | None = None) -> list[Message]:
         """Resolve explicit reply chains in the parent's conversation, never globally."""
         pending = list(messages)
         seen = {m.id for m in messages}
@@ -308,9 +309,29 @@ class MessageArchive:
                     continue
                 rows = self.store.rows('SELECT * FROM messages WHERE group_id=? AND message_id=? '
                     'AND recalled=0 AND time<=? LIMIT 2', (parent.group_id, str(native), parent.time))
-                if len(rows) != 1:
+                sources = [self.get(row['id']) for row in rows]
+                if settings and self.store.rows("SELECT 1 FROM sqlite_master WHERE name='outgoing'"):
+                    outgoing = self.store.rows("SELECT o.*,j.payload FROM outgoing o JOIN jobs j ON j.id=o.job_id "
+                        "WHERE o.group_id=? AND o.qq_message_id=? AND o.status='sent' AND o.started_at<=? LIMIT 2",
+                        (parent.group_id, str(native), parent.time))
+                    for row in outgoing:
+                        payload = json.loads(row['payload'])
+                        if not (payload.get('persona_id') == settings.persona_id or
+                                (not payload.get('persona_id') and payload.get('persona_hash') == settings.persona_fingerprint)):
+                            continue
+                        parts = json.loads(row['segments'])
+                        if not parts:
+                            continue
+                        # The send receipt stores the reply edge separately from the sent body.
+                        if row['reply_id'] is not None:
+                            parts = [{'type':'reply','data':{'id':row['reply_id']}}, *parts]
+                        sources.append(Message('outgoing:'+row['job_id'], str(native), row['group_id'],
+                            settings.self_id, settings.self_id, row['started_at'], settings.persona_name,
+                            settings.persona_name, ''.join(str(p.get('data',{}).get('text',''))
+                                for p in parts if p.get('type') == 'text'), parts))
+                if len(sources) != 1:
                     continue
-                source = self.get(rows[0]['id'])
+                source = sources[0]
                 if source is None or source.recalled or source.id in seen:
                     continue
                 seen.add(source.id)

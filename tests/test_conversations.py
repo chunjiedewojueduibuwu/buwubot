@@ -78,6 +78,37 @@ def test_quoted_context_follows_old_text_identity_without_cross_scope_or_recall(
         store.close()
 
 
+def test_quotes_follow_confirmed_self_replies_and_reject_other_personas(tmp_path):
+    cfg = Settings(group_id='123', self_id='11')
+    store = Store(tmp_path/'self-quotes.db')
+    archive = MessageArchive(store)
+    queue = JobQueue(store)
+    Coordinator(store, QQAdapter(cfg), cfg)
+    original = archive.accept(message(mid=1), cfg)
+    for native, persona, status in [('10', cfg.persona_id, 'sent'),
+                                    ('20', 'other-persona', 'sent'),
+                                    ('30', cfg.persona_id, 'uncertain')]:
+        jid = queue.enqueue('reply', {'persona_id':persona}, dedupe_key=native,
+                            priority=0, source_time=101)
+        with store.transaction() as db:
+            db.execute('INSERT INTO outgoing VALUES(?,?,?,?,?,?,?)',
+                       (jid, '123', '1', json.dumps([{'type':'text','data':{'text':'给花妈打气'}}]),
+                        101, status, native))
+    event = message(mid=2)
+    event['time'] = 102
+    event['message'] = [{'type':'reply','data':{'id':native}} for native in ('10','20','30')]
+    event['message'].append({'type':'text','data':{'text':'打多少兆帕'}})
+    target = archive.accept(event, cfg)
+    try:
+        quotes = archive.quoted([target], settings=cfg)
+        assert [m.text for m in quotes] == ['给花妈打气', original.text]
+        assert quotes[0].user_id == cfg.self_id
+        assert quotes[0].id.startswith('outgoing:')
+        assert quotes[1].id == original.id
+    finally:
+        store.close()
+
+
 def test_private_only_configuration_is_ready_and_rejects_invalid_targets():
     assert Settings(runtime_enabled=True, qq_enabled=True, owner_id='10001', persona_name='助手', aliases=['助手'], owner_private_enabled=True,persona="助手",workbuddy_key="fixture").ready
     assert not Settings(runtime_enabled=True, qq_enabled=True, owner_id='10001', persona_name='助手', aliases=['助手'], owner_private_enabled=False,persona="助手",workbuddy_key="fixture").ready

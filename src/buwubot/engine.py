@@ -475,7 +475,7 @@ class BotEngine:
 
     def _forward_sources_ready(self, messages, memory):
         refreshed = [memory.archive.get(message.id) or message for message in messages]
-        for message in [*refreshed,*memory.archive.quoted(refreshed)]:
+        for message in [*refreshed,*memory.archive.quoted(refreshed, settings=memory.settings)]:
             if not message.recalled and self._enqueue_forward(message):
                 raise WorkPaused('等待此请求涉及的转发记录读取，其他聊天仍可处理')
         return refreshed
@@ -960,7 +960,7 @@ class BotEngine:
                     {"role": "user", "content": json.dumps({"messages": [message_context(raw) for raw in payload["messages"]],
                      "now": self.clock().isoformat(), "persona": self.settings.persona,
                      "context_memory":context_memory,
-                     "quoted_messages":[message_context(m) for m in memory.archive.quoted(messages)]}, ensure_ascii=False)},
+                     "quoted_messages":[message_context(m) for m in memory.archive.quoted(messages, settings=memory.settings)]}, ensure_ascii=False)},
                 ], json_mode=True)
                 if not isinstance(result.data, dict):
                     raise ValueError("planning response must be an object")
@@ -977,7 +977,7 @@ class BotEngine:
                 ambient = (ref.channel_id == 'qq' and ref.kind == 'group'
                     and not any(m.called or m.name_mentioned for m in selected)
                     and not any(q.user_id == self.settings.self_id for m in selected
-                                for q in memory.archive.quoted([m],limit=1))
+                                for q in memory.archive.quoted([m],limit=1, settings=memory.settings))
                     and not any(self.store.rows("SELECT 1 FROM outgoing WHERE group_id=? AND qq_message_id=? "
                         "AND status='sent'",(key,str(part.get('data',{}).get('id'))))
                         for m in selected for part in m.segments if part.get('type')=='reply'))
@@ -1167,7 +1167,7 @@ class BotEngine:
             recent = memory.archive.recent(memory.settings.group_id, limit=8)
             surrounding = "\n".join(m.text for m in recent)
             latest_target = max((m.time for m in messages), default=0)
-            quoted = memory.archive.quoted(messages)
+            quoted = memory.archive.quoted(messages, settings=memory.settings)
             image_analyses=self._forward_image_results(list({m.id:m for m in [*messages,*quoted]}.values()),job)
             batched_sources={item['source_id'] for item in image_analyses}
             image_limit = len(image_analyses)+4
@@ -1177,7 +1177,10 @@ class BotEngine:
                     continue
                 # ponytail: four nearby image messages from a bounded local archive slice.
                 received = self.store.rows('SELECT received_order FROM messages WHERE id=?',
-                                           (source.id,))[0]['received_order']
+                                           (source.id,))
+                if not received:
+                    continue  # A quoted sent image has no inbound archive order.
+                received = received[0]['received_order']
                 rows = self.store.rows('SELECT id FROM messages WHERE group_id=? '
                     "AND (time,COALESCE(json_extract(payload,'$.source_order'),received_order),received_order)>=(?,?,?) "
                     "AND time<=? AND recalled=0 ORDER BY time,COALESCE(json_extract(payload,'$.source_order'),received_order),received_order LIMIT 32",
@@ -1237,12 +1240,22 @@ class BotEngine:
                 'targets':[message_context(m) for m in messages],
                 'recent_chat':memory.archive.context(memory.settings),
                 'quoted_messages':[message_context(m) for m in quoted],
+                'internal_memory_retrieval':'automatic_before_reply',
                 'bot_qq':self.settings.self_id,'owner_qq':self.settings.owner_id,
                 'reply_destination':memory.settings.group_id,'tools':self.tools.definitions()})
             if scene is None:
                 return
-            memories = await memory.retrieve(" ".join(m.text for m in messages),
-                                                  subjects=list({m.user_id for m in [*messages, *quoted]}))
+            query = " ".join(m.text for m in messages)
+            if quoted or image_analyses:
+                # Include every resolved quote, with authors, within the retrieval expansion budget.
+                quote_chars = 1600 // max(1, len(quoted))
+                query = json.dumps({'request':query[:800], 'quoted_messages':[
+                    {'id':m.id,'user_id':m.user_id,'text':m.text[:quote_chars]} for m in quoted],
+                    'image_analyses':json.dumps([{'source_id':item['source_id'],
+                        'analysis':item.get('analysis')} for item in image_analyses],ensure_ascii=False)[:400]},
+                    ensure_ascii=False)
+            memories = await memory.retrieve(query,
+                subjects=list({m.user_id for m in messages}))
             context = reply_context(memory.archive.context(memory.settings),messages)
             targets = [{**message_context(item), "local_time": datetime.fromtimestamp(item["time"], SHANGHAI).isoformat()}
                        for item in payload["messages"]]

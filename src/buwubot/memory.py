@@ -871,7 +871,8 @@ class MemoryService:
                  '可附graph_query:{mode:search/neighbors/timeline/network,entities:[明确实体名],depth:1至3}，'
                  '回忆变化用timeline，询问两个实体关系用network，邻接探索用neighbors；普通查询可省略。'
                  '实体仅取当前问题明确提及或上下文可确定者；不指定群、账号权限或人格范围。'
-                 'query是当前问题，speaker_ids是提问者；context_memory仅用于理解省略和指代，'
+                 'query是当前问题；若含request与quoted_messages，按各引用的user_id区分作者，沿引用理解当前问题，'
+                 '不要把引用者的话当成提问者自述。speaker_ids是提问者；context_memory仅用于理解省略和指代，'
                  'current_time是当前时间，用于理解今天/以前等时间指代；不要把无关话题变为检索词。'},
                 {"role": "user", "content": json.dumps({**temporal, 'query':query[:4000],
                     'speaker_ids':subjects or [], 'context_memory':context_memory}, ensure_ascii=False)},
@@ -1084,7 +1085,7 @@ class MemoryService:
         epoch = self.epoch()
         # A later ordinary batch must not make old forwarded material newer than a manual correction.
         material_sources = [*messages,*(self.archive.get(m.id) for m in messages),
-                            *self.archive.quoted(messages)]
+                            *self.archive.quoted(messages, settings=self.settings)]
         for source in material_sources:
             material = source.forwarded if source else None
             receipt_epoch = material.get('receipt_epoch') if material else None
@@ -1109,9 +1110,9 @@ class MemoryService:
         if self.schema_version()==2:
             existing=[self.with_reading_policy(item) for item in existing]
         data = {"messages": [message_context(m) for m in messages],
-                "quoted_messages": [message_context(m) for m in self.archive.quoted(messages)],
+                "quoted_messages": [message_context(m) for m in self.archive.quoted(messages, settings=self.settings)],
                 "quote_references": [{"source_id": m.id, "quoted_source_id": q.id, "quoted_user_id": q.user_id}
-                                     for m in messages for q in self.archive.quoted([m], limit=1)],
+                                     for m in messages for q in self.archive.quoted([m], limit=1, settings=self.settings)],
                 "members": members, "existing": existing,
                 "current_persona_id": self.settings.persona_id,
                 "self_id": self.settings.self_id,
@@ -1219,7 +1220,7 @@ class MemoryService:
         def related_sources(source_ids):
             ids = {self.archive.canonical_id(source) for source in source_ids}
             messages = [message for source in ids if (message := self.archive.get(source))]
-            return ids | {message.id for message in self.archive.quoted(messages) if message.forwarded}
+            return ids | {message.id for message in self.archive.quoted(messages, settings=self.settings) if message.forwarded}
         sources = related_sources(proposal.source_message_ids)
         return any(row['memory_id'] == proposal.memory_id or
                    related_sources(json.loads(row['source_ids'])) & sources
@@ -1247,7 +1248,7 @@ class MemoryService:
              + schema_prompt(LAYER_BOUNDARIES,self.schema_version())},
             {"role": "user", "content": json.dumps({"candidate": proposal.model_dump(),
              "sources": [message_context(raw) for raw in sources], "existing": current,
-             "quoted_messages": [message_context(m) for m in self.archive.quoted([Message(**raw) for raw in sources])],
+             "quoted_messages": [message_context(m) for m in self.archive.quoted([Message(**raw) for raw in sources], settings=self.settings)],
              "self_id":self.settings.self_id, "current_persona_id":self.settings.persona_id,
              "protected_persona":self.settings.persona,"protected_core":self.core_context(),
              "learning_evidence":self.learning_experiences(proposal.content)
