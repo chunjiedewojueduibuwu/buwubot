@@ -85,6 +85,12 @@ def _with_local_time(raw):
     return raw | {'local_time': local}
 
 
+def direct_message_text(message: Message) -> str:
+    """Only native top-level text is direct teaching evidence, not derived media/quotes."""
+    return ''.join(part['data']['text'] for part in message.segments if part.get('type') == 'text'
+                   and isinstance(part.get('data', {}).get('text'), str))
+
+
 def message_context(message: Message | dict) -> dict:
     raw = _with_local_time(vars(message) if isinstance(message,Message) else message)
     mentions = list(dict.fromkeys(str(part.get('data', {}).get('qq', ''))

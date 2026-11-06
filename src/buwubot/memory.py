@@ -20,6 +20,7 @@ from .conversations import (
     ConversationRef,
     Message,
     MessageArchive,
+    direct_message_text,
     message_context,
     resolve_source_ids,
 )
@@ -242,10 +243,16 @@ class MemoryService:
             owner=bool({'与管理者相处','称呼习惯','owner_teaching:owner'} & set(item['tags'])) or any(
                 tag.startswith('与') and tag.endswith('相处') for tag in item['tags'])
             result.append({'id':item['id'],'revision':item['revision'],
+                **({'growth_kind':'habit'} if 'persona_growth:habit' in item['tags'] else {}),
                 'topics':[tag for tag in item['tags'] if not tag.startswith(('persona_growth:','owner_teaching:'))],
                 'applicability':'owner_relationship' if owner else 'general_expression',
                 **({'owner_qq':self.settings.owner_id} if owner else {}),'content':item['content']})
         return result
+
+    def expression_habits(self, *, subjects, selected_ids=None) -> list[dict]:
+        return [item for item in self.core_model_context() if item.get('growth_kind') == 'habit'
+                and (item['applicability'] != 'owner_relationship' or self.settings.owner_id in subjects)
+                and (selected_ids is None or item['id'] in selected_ids)]
 
     def growth_context(self, *, now=None, include_core=True) -> list[dict]:
         """Derived ordinary memories, never authority to rewrite the protected identity."""
@@ -310,7 +317,7 @@ class MemoryService:
         for mid in selected:
             message=self.archive.get(mid)
             if (not message or message.recalled or message.group_id!=p.source_group_id
-                    or message.user_id!=cfg.owner_id or not message.text.strip()):
+                    or message.user_id!=cfg.owner_id or not direct_message_text(message).strip()):
                 raise ValueError('teaching source is not a current owner message')
             if self.teaching_message_used(mid):
                 raise ValueError('teaching source was already applied')

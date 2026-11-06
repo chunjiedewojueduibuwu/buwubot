@@ -1113,6 +1113,9 @@ class BotEngine:
             'recent_chat':memory.archive.context(memory.settings),
             'persona':self.settings.persona,'core_memory':memory.core_model_context(),
             'persona_growth':memory.growth_context(now=self.clock().timestamp(),include_core=False),
+            'active_expression_habits':memory.expression_habits(
+                subjects=[m['user_id'] for m in payload.get('messages',[])],
+                selected_ids=payload.get('expression_habit_ids',[])),
             'reply_style':payload.get('reply_style','auto'),
             'ambient_participation':job['kind']=='reply' and payload.get('ambient_participation',False),
             'allow_silence':job['kind']=='reply' and payload.get('ambient_participation',False)
@@ -1243,10 +1246,15 @@ class BotEngine:
                 'recent_chat':memory.archive.context(memory.settings),
                 'quoted_messages':[message_context(m) for m in quoted],
                 'internal_memory_retrieval':'automatic_before_reply',
+                'expression_habits':memory.expression_habits(subjects={m.user_id for m in messages}),
+                'reply_style':style,'reply_purpose':payload.get('reply_purpose',''),
                 'bot_qq':self.settings.self_id,'owner_qq':self.settings.owner_id,
                 'reply_destination':memory.settings.group_id,'tools':self.tools.definitions()})
             if scene is None:
                 return
+            payload['expression_habit_ids'] = scene.get('expression_habit_ids',[])
+            active_habits = memory.expression_habits(subjects={m.user_id for m in messages},
+                selected_ids=payload['expression_habit_ids'])
             query = " ".join(m.text for m in messages)
             if quoted or image_analyses:
                 # Include every resolved quote, with authors, within the retrieval expansion budget.
@@ -1276,6 +1284,7 @@ class BotEngine:
                     "ambient_participation":payload.get('ambient_participation',False),
                     "reply_style":style,"reply_purpose":payload.get('reply_purpose',''),
                     "reply_destination":memory.settings.group_id,"scene_brief":scene,
+                    "active_expression_habits":active_habits,
                     "quoted_messages":[message_context(m) | {'local_time':datetime.fromtimestamp(m.time, SHANGHAI).isoformat()}
                                        for m in quoted],
                     "already_sent_for_request":already_sent,
@@ -1476,6 +1485,9 @@ class BotEngine:
                         now=self.clock().timestamp()),
                     "persona_growth":self.services_for(payload.get('group_id', self.settings.group_id))[0].growth_context(
                         now=self.clock().timestamp(),include_core=False),
+                    "active_expression_habits":self.services_for(payload.get('group_id', self.settings.group_id))[0].expression_habits(
+                        subjects=[m['user_id'] for m in payload.get('messages',[])],
+                        selected_ids=payload.get('expression_habit_ids',[])),
                     "current_time":self.clock().astimezone(SHANGHAI).isoformat(),
                     "tools":self.tools.definitions(),"reply_style":style,"reply_purpose":payload.get('reply_purpose',''),
                     "tool_history":history_context,

@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .conversations import message_context
+from .conversations import direct_message_text, message_context
 from .coordinator import require_coordinator
 from .memory_graph import EntityEdge, EntityMention, MemoryGraph
 from .schedule import SHANGHAI
@@ -161,11 +161,14 @@ class MemoryConsolidation:
             "SELECT id,revision,content,tags,epoch FROM memories WHERE group_id=? AND persona_id=? AND tier='core' AND deleted=0",
             ('persona:core:'+cfg.persona_id,cfg.persona_id))]
         snapshot['owner_qq']=cfg.owner_id
-        snapshot['owner_teaching_messages']=[{key:value for key,value in message_context(message).items()
-            if key in {'id','user_id','group_id','time','text','reply_to','addressing'}} for mid in sorted({
+        snapshot['owner_teaching_messages']=[{key:value for key,value in
+            (message_context(message) | {'text':direct_message_text(message),'quoted_context':[
+                {'id':q.id,'user_id':q.user_id,'is_bot':q.user_id==cfg.self_id,'text':q.text[:600]}
+                for q in self.memory.archive.quoted([message],limit=2,settings=cfg)]}).items()
+            if key in {'id','user_id','group_id','time','text','reply_to','addressing','quoted_context'}} for mid in sorted({
             mid for item in snapshot['records'] for mid in item['source_message_ids']})
             if (message:=self.memory.archive.get(mid)) and not message.recalled
-            and message.user_id==cfg.owner_id and message.text.strip()]
+            and message.user_id==cfg.owner_id and direct_message_text(message).strip()]
         if teaching_ids is not None:
             snapshot['teaching_only']=True
         snapshot['memory_epoch'] = max([snapshot['memory_epoch'],*[item['epoch'] for item in snapshot['core_records']]])
