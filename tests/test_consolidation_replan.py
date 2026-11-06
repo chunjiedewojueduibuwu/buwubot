@@ -67,6 +67,21 @@ async def test_second_rejection_retains_material_for_attention_instead_of_replan
         payload = engine.queue.get(jid)['payload']
         assert 'result' in payload and 'review_feedback' in payload
         assert not store.rows('SELECT * FROM memory_consolidation_seen')
+        engine.queue.defer(jid, 'still rejected', now=engine.clock().timestamp(), needs_attention=True)
+        assert engine.queue.retry(jid)
+        calls = []
+        async def corrected(role, messages, **kwargs):
+            calls.append(role)
+            if role in {'auxiliary','memory'}:
+                packet = json.loads(messages[-1]['content'])
+                assert packet['review_feedback']['reason'] == '仍无依据'
+                return Completion('', engine.settings.primary_model if role == 'memory' else 'helper', result(ids))
+            return Completion('', 'checker', {'approved':True})
+        models.call = corrected
+        await engine.process(engine.queue.get(jid))
+        assert engine.queue.get(jid)['state'] == 'succeeded'
+        assert calls == ['auxiliary','memory','review']
+        assert store.rows('SELECT * FROM memory_consolidation_seen')
     finally:
         store.close()
 

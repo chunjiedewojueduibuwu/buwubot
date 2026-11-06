@@ -28,6 +28,32 @@ def test_queue_priority_deduplication_and_failure_survive_restart(tmp_path):
     store.close()
 
 
+@pytest.mark.parametrize('rejected', [True, False])
+def test_retry_rebuilds_rejected_consolidation_but_preserves_transport_progress(tmp_path, rejected):
+    store = Store(tmp_path/'retry.db')
+    queue = JobQueue(store)
+    feedback = {'stage':'semantic','reason':'wrong chronology','rejected':{'relations':[]}}
+    payload = {'snapshot':{'fingerprint':'original'},'prepared_candidates':{'relations':[]},
+               'result':{'relations':[]},'reviewed_batches':['checked-part']}
+    if rejected:
+        payload['last_rejection'] = feedback
+    jid = queue.enqueue('consolidate',payload,dedupe_key='retry',priority=2,source_time=1)
+    queue.defer(jid,'needs correction' if rejected else 'gateway HTTP 502',now=1,needs_attention=True)
+    try:
+        queue.retry(jid)
+        saved = queue.get(jid)
+        assert saved['state'] == 'pending' and saved['last_error'] is None
+        assert saved['payload']['snapshot'] == payload['snapshot']
+        if rejected:
+            assert saved['payload']['last_rejection'] == feedback
+            assert saved['payload']['review_feedback'] == feedback
+            assert not {'result','prepared_candidates','reviewed_batches'} & saved['payload'].keys()
+        else:
+            assert saved['payload'] == payload
+    finally:
+        store.close()
+
+
 class QQFixture:
     def __init__(self, result="ok", history=None):
         self.result = result

@@ -471,8 +471,7 @@ def register_admin(app: FastAPI):
                 raise HTTPException(404, "任务不存在")
             if job["state"] not in {"needs_attention", "retry_wait"}:
                 raise Conflict("只能重试等待恢复或需要检查的任务")
-            with state.store.transaction() as db:
-                db.execute("UPDATE jobs SET state='pending',next_attempt=0 WHERE id=?", (jid,))
+            state.coordinator.queue.retry(jid)
             state.store.event("job", "管理页面请求重试任务", {"job_id": jid})
 
         await state.coordinator.commit(retry)

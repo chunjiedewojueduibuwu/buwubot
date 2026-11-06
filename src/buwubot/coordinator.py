@@ -82,9 +82,24 @@ class JobQueue:
                        ("needs_attention" if needs_attention else "retry_wait", reason[:500],
                         now + delay, now, jid))
 
-    def retry_attention(self):
+    def retry(self, jid: str):
         with self.store.transaction() as db:
-            db.execute("UPDATE jobs SET state='pending',next_attempt=0 WHERE state='needs_attention'")
+            job = self.get(jid)
+            if not job or job['state'] not in {'needs_attention', 'retry_wait'}:
+                return False
+            payload = job['payload']
+            if job['kind'] == 'consolidate' and payload.get('last_rejection'):
+                # Re-adopt from the original evidence; never retry the same rejected cached plan.
+                payload['review_feedback'] = payload['last_rejection']
+                for field in ('result','prepared_candidates','origin_model','reviewed','reviewed_batches','review_policy'):
+                    payload.pop(field, None)
+            db.execute("UPDATE jobs SET state='pending',next_attempt=0,last_error=NULL,payload=?,updated_at=? WHERE id=?",
+                       (json.dumps(payload,ensure_ascii=False),time.time(),jid))
+        return True
+
+    def retry_attention(self):
+        for row in self.store.rows("SELECT id FROM jobs WHERE state='needs_attention'"):
+            self.retry(row['id'])
 
 
 class Coordinator:
