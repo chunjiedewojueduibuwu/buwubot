@@ -818,11 +818,13 @@ class BotEngine:
         feedback = {'stage': stage, 'reason': reason[:2000],
                     'rejected': rejected if len(json.dumps(rejected, ensure_ascii=False)) <= 48000
                     else {'omitted': 'material exceeds budget'}}
-        if 'review_feedback' in payload:
+        attempts = payload.get('correction_attempts', int('review_feedback' in payload))
+        if attempts >= 2:
             payload['last_rejection'] = feedback
             self.queue.payload(job['id'], payload)
             return False
         payload['review_feedback'] = feedback
+        payload['correction_attempts'] = attempts + 1
         for field in ('result', 'prepared_candidates', 'origin_model', 'reviewed', 'reviewed_batches', 'review_policy'):
             payload.pop(field, None)
         with self.store.transaction():

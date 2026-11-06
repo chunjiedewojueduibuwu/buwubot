@@ -45,9 +45,14 @@ def test_retry_rebuilds_rejected_consolidation_but_preserves_transport_progress(
         assert saved['state'] == 'pending' and saved['last_error'] is None
         assert saved['payload']['snapshot'] == payload['snapshot']
         if rejected:
-            assert saved['payload']['last_rejection'] == feedback
             assert saved['payload']['review_feedback'] == feedback
+            assert 'last_rejection' not in saved['payload']
             assert not {'result','prepared_candidates','reviewed_batches'} & saved['payload'].keys()
+            resumed = saved['payload'] | {'result':{'relations':[]},'reviewed_batches':['fresh-check']}
+            queue.payload(jid,resumed)
+            queue.defer(jid,'gateway HTTP 502',now=2,needs_attention=True)
+            queue.retry(jid)
+            assert queue.get(jid)['payload'] == resumed
         else:
             assert saved['payload'] == payload
     finally:

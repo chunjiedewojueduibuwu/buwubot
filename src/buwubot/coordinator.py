@@ -90,7 +90,8 @@ class JobQueue:
             payload = job['payload']
             if job['kind'] == 'consolidate' and payload.get('last_rejection'):
                 # Re-adopt from the original evidence; never retry the same rejected cached plan.
-                payload['review_feedback'] = payload['last_rejection']
+                payload['review_feedback'] = payload.pop('last_rejection')
+                payload['correction_attempts'] = 0
                 for field in ('result','prepared_candidates','origin_model','reviewed','reviewed_batches','review_policy'):
                     payload.pop(field, None)
             db.execute("UPDATE jobs SET state='pending',next_attempt=0,last_error=NULL,payload=?,updated_at=? WHERE id=?",

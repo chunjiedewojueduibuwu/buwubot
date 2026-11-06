@@ -10,7 +10,8 @@ from buwubot.models import Completion
 
 
 @pytest.mark.parametrize('failure', ['structure', 'semantic'])
-async def test_bad_plan_is_returned_once_before_any_formal_write(tmp_path, failure):
+@pytest.mark.parametrize('success_attempt', [2, 3])
+async def test_bad_plan_is_corrected_before_any_formal_write(tmp_path, failure, success_attempt):
     store, engine, qq, models, ids = await engine_pair(tmp_path)
     calls = []
     attempts = 0
@@ -24,7 +25,7 @@ async def test_bad_plan_is_returned_once_before_any_formal_write(tmp_path, failu
             return Completion('', 'helper', {'relations': []})
         if role == 'memory':
             attempts += 1
-            if attempts > 1:
+            if attempts >= success_attempt:
                 assert data['review_feedback']['stage'] == failure
                 return Completion('', engine.settings.primary_model, {'relations': []})
             output = result(ids)
@@ -45,6 +46,10 @@ async def test_bad_plan_is_returned_once_before_any_formal_write(tmp_path, failu
         assert not store.rows('SELECT * FROM memory_relations')
         assert calls == (['auxiliary', 'memory'] if failure == 'structure' else ['auxiliary', 'memory', 'review'])
         await engine.process(saved)
+        if success_attempt == 3:
+            assert engine.queue.get(jid)['state'] == 'pending'
+            assert engine.queue.get(jid)['payload']['correction_attempts'] == 2
+            await engine.process(engine.queue.get(jid))
         assert engine.queue.get(jid)['state'] == 'succeeded'
         assert calls[-2:] == ['auxiliary', 'memory']
         assert qq.sent == []
@@ -52,7 +57,7 @@ async def test_bad_plan_is_returned_once_before_any_formal_write(tmp_path, failu
         store.close()
 
 
-async def test_second_rejection_retains_material_for_attention_instead_of_replanning_forever(tmp_path):
+async def test_two_corrections_then_retain_material_until_explicit_retry(tmp_path):
     store, engine, _, models, ids = await engine_pair(tmp_path)
     async def call(role, *args, **kwargs):
         return Completion('', engine.settings.primary_model if role == 'memory' else 'checker',
@@ -62,6 +67,9 @@ async def test_second_rejection_retains_material_for_attention_instead_of_replan
     jid = store.rows("SELECT id FROM jobs WHERE kind='consolidate'")[0]['id']
     try:
         await engine.process(engine.queue.get(jid))
+        assert engine.queue.get(jid)['payload']['correction_attempts'] == 1
+        await engine.process(engine.queue.get(jid))
+        assert engine.queue.get(jid)['payload']['correction_attempts'] == 2
         with pytest.raises(ReviewRequired):
             await engine.process(engine.queue.get(jid))
         payload = engine.queue.get(jid)['payload']
